@@ -13,6 +13,7 @@ from schemas.story import (
     CompleteStoryNodeResponse, CompleteStoryNodeResponse, CreateStoryRequest, CompleteStoryResponse
 )
 from schemas.job import StoryJobResponse
+from core.story_generator import StoryGenerator
 
 #allows to make different endpoints in different files
 router = APIRouter(
@@ -22,7 +23,7 @@ router = APIRouter(
 #because of this, the path to reach any backend api is: backendURL/API/stories/endpoint(whatever it is)
 
 def get_session_id(session_id: Optional[str] = Cookie(None)): #checks if session id exists or not for pre-loading
-    if session_id is None:
+    if not session_id:
         session_id = str(uuid.uuid4())
     return session_id
 
@@ -59,7 +60,7 @@ def generate_story_task(job_id:str, theme:str, session_id:str):
     db = SessionLocal() #creating a new db session to prevent hanging when multiple users are waiting on the LLM,to keep it asynchronous
 
     try:
-        job = db.query(StoryJob).filter(StoryJob.job_id == job_id).first() #query to find job_id in the databse
+        job = db.query(StoryJob).filter(StoryJob.job_id == job_id).first() #query to find job_id in the database
         if not job:
             return
 
@@ -67,13 +68,13 @@ def generate_story_task(job_id:str, theme:str, session_id:str):
             job.status = "processing"
             db.commit()
 
-            story = {} # will generate story here
-            job.story_id = 1 #update story id here
+            story = StoryGenerator.generate_story(db, session_id, theme)
+
+            job.story_id = story.id #update story id here
             job.status = "completed"
             job.completed_at = datetime.now()
             db.commit()
-        except Exception as e:
-            job.story_id = 1  # update story id here
+        except Exception as e: # update story id here
             job.status = "failed"
             job.completed_at = datetime.now()
             job.error = str(e)
@@ -90,4 +91,26 @@ def get_complete_story(story_id: int, db: Session = Depends(get_db)): #line 84 a
     return complete_story
 
 def build_complete_story_tree(db: Session, story:Story) -> CompleteStoryResponse:
-    pass
+    nodes = db.query(StoryNode).filter(StoryNode.story_id == story.id).all()
+    node_dict = {}
+    for node in nodes:
+        node_response = CompleteStoryNodeResponse(
+            id=node.id,
+            content=node.content,
+            is_ending=node.is_ending,
+            is_winning_ending=node.is_winning_ending,
+            options=node.options
+        )
+        node_dict[node.id] = node_response
+
+    root_node = next((node for node in nodes if node.is_root), None) #finding the root node
+    if not root_node:
+        raise HTTPException(status_code=500, detail="Story root node not found")
+    return CompleteStoryResponse(
+        id=story.id,
+        title=story.title,
+        session_id=story.session_id,
+        created_at=story.created_at,
+        root_node=node_dict[root_node.id],
+        all_nodes=node_dict
+    )
