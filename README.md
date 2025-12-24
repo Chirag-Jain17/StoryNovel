@@ -5,8 +5,10 @@ StoryNovel is an option based game where users needs to select hoices as they go
 
 ## TechStack
 
-| Backend |
-| :--- |
-| Python |
-| FastAPI |
-| Uvicorn |
+| Backend | Frontend |
+| :--- | :--- |
+| Python | React |
+| FastAPI | TypeScript |
+| Uvicorn | Vite |
+| SQLAlchemy | CSS |
+| PostgreSQL | React-Router-DOM |
